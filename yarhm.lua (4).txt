@@ -5207,9 +5207,9 @@ local function QUXUEEW_fake_script() -- Fake Script: StarterGui.YARHM.Murder Mys
 
 	local claimedCoins = {}
 
-	local showPredictedCircle = false -- Biến toggle để bật/tắt vòng tròn
-	local predictedCircleGui = nil -- Lưu trữ BillboardGui của vòng tròn
-	local predictedCircleConnection = nil -- Lưu kết nối RunService để cập nhật vòng tròn
+local showPredictedCircle = false -- Biến toggle để bật/tắt vòng tròn
+local predictedCircleGui = nil -- Lưu trữ BillboardGui của vòng tròn
+local predictedCircleConnection = nil -- Lưu kết nối RunService để cập nhật vòng tròn
 
 	local function findMurderer()
 
@@ -5642,17 +5642,17 @@ local function QUXUEEW_fake_script() -- Fake Script: StarterGui.YARHM.Murder Mys
 
 
 local function getPredictedPosition(player, shootOffset)
-    pcall(function()
-        player = player.Character
-        if not player then 
-            fu.notification("Không tìm thấy nhân vật của mục tiêu.")
-            return Vector3.new(0, 0, 0)
-        end
-    end)
-    local playerHRP = player:FindFirstChild("UpperTorso")
-    local playerHum = player:FindFirstChild("Humanoid")
+    if not player or not player.Character then 
+        fu.notification("Không tìm thấy nhân vật của mục tiêu.")
+        print("[Debug] getPredictedPosition: No character found for player")
+        return Vector3.new(0, 0, 0)
+    end
+
+    local playerHRP = player.Character:FindFirstChild("HumanoidRootPart") -- Sửa từ UpperTorso sang HumanoidRootPart
+    local playerHum = player.Character:FindFirstChild("Humanoid")
     if not playerHRP or not playerHum then
         fu.notification("Không tìm thấy HumanoidRootPart hoặc Humanoid của mục tiêu.")
+        print("[Debug] getPredictedPosition: No HumanoidRootPart or Humanoid found")
         return Vector3.new(0, 0, 0)
     end
 
@@ -5660,13 +5660,14 @@ local function getPredictedPosition(player, shootOffset)
     local velocity = playerHRP.AssemblyLinearVelocity
     local playerMoveDirection = playerHum.MoveDirection
     local ping = localplayer:GetNetworkPing() * 1000 -- Chuyển ping từ giây sang mili-giây
-    local pingFactor = 1 + (ping / 1000) * (shootOffset / 2) -- Hệ số bù ping, nhân với shootOffset/2 để điều chỉnh
+    local pingFactor = 1 + (ping / 1000) * (shootOffset / 2) -- Hệ số bù ping
 
-    -- Dự đoán vị trí dựa trên vận tốc, hướng di chuyển, và ping
+    -- Dự đoán vị trí
     local predictedPosition = playerPosition
         + (velocity * Vector3.new(1, 0.5, 1)) * (shootOffset / 15) * pingFactor
         + playerMoveDirection * shootOffset * pingFactor
 
+    print("[Debug] getPredictedPosition: Position =", predictedPosition, "Ping =", ping, "PingFactor =", pingFactor)
     return predictedPosition
 end
 
@@ -5680,6 +5681,7 @@ local function updatePredictedCircle()
             predictedCircleConnection:Disconnect()
             predictedCircleConnection = nil
         end
+        print("[Debug] updatePredictedCircle: Disabled circle")
         return
     end
 
@@ -5689,6 +5691,7 @@ local function updatePredictedCircle()
             predictedCircleGui:Destroy()
             predictedCircleGui = nil
         end
+        print("[Debug] updatePredictedCircle: No valid murderer found")
         return
     end
 
@@ -5698,6 +5701,7 @@ local function updatePredictedCircle()
             predictedCircleGui:Destroy()
             predictedCircleGui = nil
         end
+        print("[Debug] updatePredictedCircle: Invalid predicted position")
         return
     end
 
@@ -5706,28 +5710,34 @@ local function updatePredictedCircle()
         predictedCircleGui = Instance.new("BillboardGui")
         predictedCircleGui.Name = "PredictedCircle"
         predictedCircleGui.Parent = game.Workspace
-        predictedCircleGui.Adornee = Instance.new("Part")
-        predictedCircleGui.Adornee.Anchored = true
-        predictedCircleGui.Adornee.Transparency = 1
-        predictedCircleGui.Adornee.Size = Vector3.new(0.1, 0.1, 0.1)
-        predictedCircleGui.Adornee.Parent = game.Workspace
         predictedCircleGui.AlwaysOnTop = true
-        predictedCircleGui.Size = UDim2.new(0, 50, 0, 50)
-        predictedCircleGui.StudsOffset = Vector3.new(0, 2, 0)
+        predictedCircleGui.Size = UDim2.new(0, 30, 0, 30) -- Kích thước nhỏ hơn
+        predictedCircleGui.StudsOffset = Vector3.new(0, 1, 0) -- Nâng vòng tròn lên 1 stud
 
         local circle = Instance.new("Frame")
         circle.Size = UDim2.new(1, 0, 1, 0)
-        circle.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vòng tròn màu đỏ
-        circle.BackgroundTransparency = 0.5
+        circle.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Màu đỏ
+        circle.BackgroundTransparency = 0.3 -- Trong suốt nhẹ
         circle.BorderSizePixel = 0
         local uicorner = Instance.new("UICorner")
-        uicorner.CornerRadius = UDim.new(1, 0) -- Tạo hình tròn
+        uicorner.CornerRadius = UDim.new(1, 0) -- Hình tròn
         uicorner.Parent = circle
         circle.Parent = predictedCircleGui
+
+        -- Tạo Part ẩn để gắn BillboardGui
+        local adorneePart = Instance.new("Part")
+        adorneePart.Name = "PredictedCirclePart"
+        adorneePart.Anchored = true
+        adorneePart.Transparency = 1
+        adorneePart.Size = Vector3.new(0.1, 0.1, 0.1)
+        adorneePart.Parent = game.Workspace
+        predictedCircleGui.Adornee = adorneePart
+        print("[Debug] updatePredictedCircle: Created new BillboardGui")
     end
 
     -- Cập nhật vị trí vòng tròn
     predictedCircleGui.Adornee.Position = predictedPosition
+    print("[Debug] updatePredictedCircle: Updated position to", predictedPosition)
 end
 
 	task.spawn(function()
