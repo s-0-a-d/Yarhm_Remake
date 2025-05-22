@@ -5207,6 +5207,10 @@ local function QUXUEEW_fake_script() -- Fake Script: StarterGui.YARHM.Murder Mys
 
 	local claimedCoins = {}
 
+	local showPredictedCircle = false -- Biến toggle để bật/tắt vòng tròn
+	local predictedCircleGui = nil -- Lưu trữ BillboardGui của vòng tròn
+	local predictedCircleConnection = nil -- Lưu kết nối RunService để cập nhật vòng tròn
+
 	local function findMurderer()
 
 
@@ -5637,36 +5641,94 @@ local function QUXUEEW_fake_script() -- Fake Script: StarterGui.YARHM.Murder Mys
 
 
 
-	local function getPredictedPosition(player, shootOffset)
-		pcall(function()
-			player = player.Character
-			if not player.Character then fu.notification("No murderer to predict position.") return end
-		end)
-		local playerHRP = player:FindFirstChild("UpperTorso")
-		local playerHum = player:FindFirstChild("Humanoid")
-		if not playerHRP or not playerHum then
-			return Vector3.new(0,0,0), "Could not find the player's HumanoidRootPart."
-		end
+local function getPredictedPosition(player, shootOffset)
+    pcall(function()
+        player = player.Character
+        if not player then 
+            fu.notification("Không tìm thấy nhân vật của mục tiêu.")
+            return Vector3.new(0, 0, 0)
+        end
+    end)
+    local playerHRP = player:FindFirstChild("UpperTorso")
+    local playerHum = player:FindFirstChild("Humanoid")
+    if not playerHRP or not playerHum then
+        fu.notification("Không tìm thấy HumanoidRootPart hoặc Humanoid của mục tiêu.")
+        return Vector3.new(0, 0, 0)
+    end
 
-		local playerPosition = playerHRP.Position
-		local velocity = Vector3.new()
-		velocity = playerHRP.AssemblyLinearVelocity
-		local playerMoveDirection = playerHum.MoveDirection
-		local playerLookVec = playerHRP.CFrame.LookVector
-		local yVelFactor = velocity.Y > 0 and -1 or 0.5
-		local predictedPosition
-		predictedPosition = playerHRP.Position + ((velocity * Vector3.new(0, 0.5, 0))) * (shootOffset / 15) +playerMoveDirection * shootOffset
-		predictedPosition = predictedPosition * (((localplayer:GetNetworkPing() * 1000) * ((offsetToPingMult - 1) * 0.01)) + 1)
-		-- failed so hard i had to revert back to v1.11 :sob:
+    local playerPosition = playerHRP.Position
+    local velocity = playerHRP.AssemblyLinearVelocity
+    local playerMoveDirection = playerHum.MoveDirection
+    local ping = localplayer:GetNetworkPing() * 1000 -- Chuyển ping từ giây sang mili-giây
+    local pingFactor = 1 + (ping / 1000) * (shootOffset / 2) -- Hệ số bù ping, nhân với shootOffset/2 để điều chỉnh
 
-		--predictedPosition = Vector3.new(predictedPositiomurdererHRP.Position + ((murdererVelocity * Vector3.new(0, 0.5, 0))) * (shootOffset / 15) + murderer.Character.Humanoid.MoveDirection * shootOffsetn.X, math.clamp(predictedPosition.Y, playerPosition.Y - 2, playerPosition.Y + 2), predictedPosition.Z)
+    -- Dự đoán vị trí dựa trên vận tốc, hướng di chuyển, và ping
+    local predictedPosition = playerPosition
+        + (velocity * Vector3.new(1, 0.5, 1)) * (shootOffset / 15) * pingFactor
+        + playerMoveDirection * shootOffset * pingFactor
 
+    return predictedPosition
+end
 
-		return predictedPosition
-	end
+local function updatePredictedCircle()
+    if not showPredictedCircle then
+        if predictedCircleGui then
+            predictedCircleGui:Destroy()
+            predictedCircleGui = nil
+        end
+        if predictedCircleConnection then
+            predictedCircleConnection:Disconnect()
+            predictedCircleConnection = nil
+        end
+        return
+    end
 
+    local murderer = findMurderer() or findSheriffThatsNotMe()
+    if not murderer or not murderer.Character or not murderer.Character:FindFirstChild("HumanoidRootPart") then
+        if predictedCircleGui then
+            predictedCircleGui:Destroy()
+            predictedCircleGui = nil
+        end
+        return
+    end
 
+    local predictedPosition = getPredictedPosition(murderer, shootOffset)
+    if predictedPosition == Vector3.new(0, 0, 0) then
+        if predictedCircleGui then
+            predictedCircleGui:Destroy()
+            predictedCircleGui = nil
+        end
+        return
+    end
 
+    -- Tạo BillboardGui nếu chưa tồn tại
+    if not predictedCircleGui then
+        predictedCircleGui = Instance.new("BillboardGui")
+        predictedCircleGui.Name = "PredictedCircle"
+        predictedCircleGui.Parent = game.Workspace
+        predictedCircleGui.Adornee = Instance.new("Part")
+        predictedCircleGui.Adornee.Anchored = true
+        predictedCircleGui.Adornee.Transparency = 1
+        predictedCircleGui.Adornee.Size = Vector3.new(0.1, 0.1, 0.1)
+        predictedCircleGui.Adornee.Parent = game.Workspace
+        predictedCircleGui.AlwaysOnTop = true
+        predictedCircleGui.Size = UDim2.new(0, 50, 0, 50)
+        predictedCircleGui.StudsOffset = Vector3.new(0, 2, 0)
+
+        local circle = Instance.new("Frame")
+        circle.Size = UDim2.new(1, 0, 1, 0)
+        circle.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vòng tròn màu đỏ
+        circle.BackgroundTransparency = 0.5
+        circle.BorderSizePixel = 0
+        local uicorner = Instance.new("UICorner")
+        uicorner.CornerRadius = UDim.new(1, 0) -- Tạo hình tròn
+        uicorner.Parent = circle
+        circle.Parent = predictedCircleGui
+    end
+
+    -- Cập nhật vị trí vòng tròn
+    predictedCircleGui.Adornee.Position = predictedPosition
+end
 
 	task.spawn(function()
 		while task.wait(1) do
@@ -5805,39 +5867,38 @@ table.insert(module, {
         "Shoot Murderer", 
         function(Self)
             if findSheriff() ~= localplayer then 
-                fu.notification("You're not sheriff/hero.") 
+                fu.notification("Bạn không phải là sheriff/hero.") 
                 return 
             end
 
             local murderer = findMurderer() or findSheriffThatsNotMe()
             if not murderer then
-                fu.notification("No murderer (or sheriff) to shoot.")
+                fu.notification("Không tìm thấy murderer (hoặc sheriff).")
                 return
             end
 
             local hum = localplayer.Character:FindFirstChild("Humanoid")
             if not hum then
-                fu.notification("No humanoid found for local player.")
+                fu.notification("Không tìm thấy humanoid của người chơi.")
                 return
             end
 
             local gun = localplayer.Backpack:FindFirstChild("Gun")
             if not gun then
-                fu.notification("You don't have the gun in your backpack.")
+                fu.notification("Không tìm thấy súng trong ba lô.")
                 return
             end
 
             local murdererHRP = murderer.Character:FindFirstChild("HumanoidRootPart")
             if not murdererHRP then
-                fu.notification("Could not find the murderer's HumanoidRootPart.")
+                fu.notification("Không tìm thấy HumanoidRootPart của murderer.")
                 return
             end
 
-            -- Equip the gun
+            -- Cầm súng
             hum:EquipTool(gun)
-            task.wait(0.1) -- Brief delay to ensure the gun is equipped
 
-            -- Get predicted position and shoot
+            -- Lấy vị trí dự đoán và bắn
             local predictedPosition = getPredictedPosition(murderer, shootOffset)
             local args = {
                 [1] = 1,
@@ -5846,10 +5907,37 @@ table.insert(module, {
             }
             localplayer.Character.Gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(unpack(args))
 
-            -- Unequip the gun
-            task.wait(0.1) -- Brief delay to ensure the shot is fired
+            -- Bỏ súng ngay lập tức
             hum:UnequipTools()
-            fu.notification("Shot fired at murderer and gun unequipped.")
+            fu.notification("Đã bắn vào murderer và bỏ súng ngay lập tức.")
+        end,
+    }
+})
+
+table.insert(module, {
+    Type = "Toggle",
+    Args = {
+        "Hiển thị vòng tròn dự đoán", 
+        function(Self, state)
+            showPredictedCircle = state
+            if state then
+                fu.notification("Đã bật vòng tròn hiển thị vị trí dự đoán.")
+                -- Kết nối RunService để cập nhật vị trí vòng tròn theo thời gian thực
+                if not predictedCircleConnection then
+                    predictedCircleConnection = game:GetService("RunService").Heartbeat:Connect(updatePredictedCircle)
+                end
+            else
+                fu.notification("Đã tắt vòng tròn hiển thị vị trí dự đoán.")
+                -- Xóa vòng tròn và ngắt kết nối
+                if predictedCircleGui then
+                    predictedCircleGui:Destroy()
+                    predictedCircleGui = nil
+                end
+                if predictedCircleConnection then
+                    predictedCircleConnection:Disconnect()
+                    predictedCircleConnection = nil
+                end
+            end
         end,
     }
 })
