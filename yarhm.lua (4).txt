@@ -5648,7 +5648,7 @@ local function getPredictedPosition(player, shootOffset)
         return Vector3.new(0, 0, 0)
     end
 
-    local playerHRP = player.Character:FindFirstChild("HumanoidRootPart") -- Sửa từ UpperTorso sang HumanoidRootPart
+    local playerHRP = player.Character:FindFirstChild("HumanoidRootPart")
     local playerHum = player.Character:FindFirstChild("Humanoid")
     if not playerHRP or not playerHum then
         fu.notification("Không tìm thấy HumanoidRootPart hoặc Humanoid của mục tiêu.")
@@ -5658,16 +5658,29 @@ local function getPredictedPosition(player, shootOffset)
 
     local playerPosition = playerHRP.Position
     local velocity = playerHRP.AssemblyLinearVelocity
-    local playerMoveDirection = playerHum.MoveDirection
-    local ping = localplayer:GetNetworkPing() * 1000 -- Chuyển ping từ giây sang mili-giây
-    local pingFactor = 1 + (ping / 1000) * (shootOffset / 2) -- Hệ số bù ping
+    local walkSpeed = playerHum.WalkSpeed or 16
+    local moveDirection = playerHum.MoveDirection
+    local ping = localplayer:GetNetworkPing() * 1000
+    local pingFactor = 1 + (ping / 1000) * (shootOffset / 2)
 
-    -- Dự đoán vị trí
+    local bodyHeightScale = playerHum:FindFirstChild("BodyHeightScale") and playerHum.BodyHeightScale.Value or 1
+    local bodyDepthScale = playerHum:FindFirstChild("BodyDepthScale") and playerHum.BodyDepthScale.Value or 1
+    local heightOffset = bodyHeightScale * 1.5
+
+    local jumpOffset = Vector3.new(0, 0, 0)
+    if playerHum.Jump then
+        local jumpHeight = playerHum.JumpHeight or 7.2
+        jumpOffset = Vector3.new(0, jumpHeight * 0.5 * pingFactor, 0)
+        print("[Debug] getPredictedPosition: Target is jumping, JumpHeight =", jumpHeight)
+    end
+
     local predictedPosition = playerPosition
-        + (velocity * Vector3.new(1, 0.5, 1)) * (shootOffset / 15) * pingFactor
-        + playerMoveDirection * shootOffset * pingFactor
+        + (velocity * Vector3.new(1, 0.5, 1)) * (shootOffset / 15) * pingFactor * (walkSpeed / 16)
+        + moveDirection * shootOffset * pingFactor * (walkSpeed / 16)
+        + Vector3.new(0, heightOffset, 0)
+        + jumpOffset
 
-    print("[Debug] getPredictedPosition: Position =", predictedPosition, "Ping =", ping, "PingFactor =", pingFactor)
+    print("[Debug] getPredictedPosition: Position =", predictedPosition, "Ping =", ping, "WalkSpeed =", walkSpeed, "HeightOffset =", heightOffset)
     return predictedPosition
 end
 
@@ -5711,20 +5724,19 @@ local function updatePredictedCircle()
         predictedCircleGui.Name = "PredictedCircle"
         predictedCircleGui.Parent = game.Workspace
         predictedCircleGui.AlwaysOnTop = true
-        predictedCircleGui.Size = UDim2.new(0, 30, 0, 30) -- Kích thước nhỏ hơn
-        predictedCircleGui.StudsOffset = Vector3.new(0, 1, 0) -- Nâng vòng tròn lên 1 stud
+        predictedCircleGui.Size = UDim2.new(0, 15, 0, 15) -- Kích thước nhỏ hơn
+        predictedCircleGui.StudsOffset = Vector3.new(0, 0, 0)
 
         local circle = Instance.new("Frame")
         circle.Size = UDim2.new(1, 0, 1, 0)
-        circle.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Màu đỏ
-        circle.BackgroundTransparency = 0.3 -- Trong suốt nhẹ
+        circle.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        circle.BackgroundTransparency = 0.6 -- Tăng trong suốt
         circle.BorderSizePixel = 0
         local uicorner = Instance.new("UICorner")
-        uicorner.CornerRadius = UDim.new(1, 0) -- Hình tròn
+        uicorner.CornerRadius = UDim.new(1, 0)
         uicorner.Parent = circle
         circle.Parent = predictedCircleGui
 
-        -- Tạo Part ẩn để gắn BillboardGui
         local adorneePart = Instance.new("Part")
         adorneePart.Name = "PredictedCirclePart"
         adorneePart.Anchored = true
@@ -5907,18 +5919,29 @@ table.insert(module, {
 
             -- Cầm súng
             hum:EquipTool(gun)
+            print("[Debug] Shoot Murderer: Gun equipped")
 
             -- Lấy vị trí dự đoán và bắn
             local predictedPosition = getPredictedPosition(murderer, shootOffset)
+            if predictedPosition == Vector3.new(0, 0, 0) then
+                fu.notification("Không thể dự đoán vị trí bắn.")
+                hum:UnequipTools()
+                return
+            end
+
             local args = {
                 [1] = 1,
                 [2] = predictedPosition,
                 [3] = "AH2"
             }
-            localplayer.Character.Gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(unpack(args))
+            local success, result = pcall(function()
+                return localplayer.Character.Gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(unpack(args))
+            end)
+            print("[Debug] Shoot Murderer: Shot fired, success =", success, "result =", result)
 
             -- Bỏ súng ngay lập tức
             hum:UnequipTools()
+            print("[Debug] Shoot Murderer: Gun unequipped")
             fu.notification("Đã bắn vào murderer và bỏ súng ngay lập tức.")
         end,
     }
@@ -5932,20 +5955,23 @@ table.insert(module, {
             showPredictedCircle = state
             if state then
                 fu.notification("Đã bật vòng tròn hiển thị vị trí dự đoán.")
-                -- Kết nối RunService để cập nhật vị trí vòng tròn theo thời gian thực
+                print("[Debug] Toggle: Enabled predicted circle")
                 if not predictedCircleConnection then
                     predictedCircleConnection = game:GetService("RunService").Heartbeat:Connect(updatePredictedCircle)
+                    print("[Debug] Toggle: Connected RunService")
                 end
             else
                 fu.notification("Đã tắt vòng tròn hiển thị vị trí dự đoán.")
-                -- Xóa vòng tròn và ngắt kết nối
+                print("[Debug] Toggle: Disabled predicted circle")
                 if predictedCircleGui then
                     predictedCircleGui:Destroy()
                     predictedCircleGui = nil
+                    print("[Debug] Toggle: Destroyed BillboardGui")
                 end
                 if predictedCircleConnection then
                     predictedCircleConnection:Disconnect()
                     predictedCircleConnection = nil
+                    print("[Debug] Toggle: Disconnected RunService")
                 end
             end
         end,
