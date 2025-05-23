@@ -5660,27 +5660,63 @@ local function getPredictedPosition(player, shootOffset)
     local velocity = playerHRP.AssemblyLinearVelocity
     local walkSpeed = playerHum.WalkSpeed or 16
     local moveDirection = playerHum.MoveDirection
-    local ping = localplayer:GetNetworkPing() * 1000
-    local pingFactor = 1 + (ping / 1000) * (shootOffset / 2)
-
     local bodyHeightScale = playerHum:FindFirstChild("BodyHeightScale") and playerHum.BodyHeightScale.Value or 1
-    local bodyDepthScale = playerHum:FindFirstChild("BodyDepthScale") and playerHum.BodyDepthScale.Value or 1
     local heightOffset = bodyHeightScale * 1.5
 
     local jumpOffset = Vector3.new(0, 0, 0)
     if playerHum.Jump then
         local jumpHeight = playerHum.JumpHeight or 7.2
-        jumpOffset = Vector3.new(0, jumpHeight * 0.5 * pingFactor, 0)
+        jumpOffset = Vector3.new(0, jumpHeight * 0.5, 0)
         print("[Debug] getPredictedPosition: Target is jumping, JumpHeight =", jumpHeight)
     end
 
+    -- Dự đoán vị trí cơ bản (không dùng ping)
     local predictedPosition = playerPosition
-        + (velocity * Vector3.new(1, 0.5, 1)) * (shootOffset / 15) * pingFactor * (walkSpeed / 16)
-        + moveDirection * shootOffset * pingFactor * (walkSpeed / 16)
+        + (velocity * Vector3.new(1, 0.5, 1)) * (shootOffset / 20) * (walkSpeed / 16) -- Giảm shootOffset để tránh xa
+        + moveDirection * shootOffset * (walkSpeed / 16)
         + Vector3.new(0, heightOffset, 0)
         + jumpOffset
 
-    print("[Debug] getPredictedPosition: Position =", predictedPosition, "Ping =", ping, "WalkSpeed =", walkSpeed, "HeightOffset =", heightOffset)
+    -- Phát hiện vật cản bằng Raycast
+    local camera = workspace.CurrentCamera
+    local rayOrigin = localplayer.Character and localplayer.Character:FindFirstChild("HumanoidRootPart") and localplayer.Character.HumanoidRootPart.Position or camera.CFrame.Position
+    local rayDirection = (predictedPosition - rayOrigin).Unit * (predictedPosition - rayOrigin).Magnitude
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {localplayer.Character, player.Character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+
+    if raycastResult and raycastResult.Instance then
+        print("[Debug] getPredictedPosition: Obstacle detected at", raycastResult.Position)
+        -- Kiểm tra toàn bộ cơ thể
+        local bodyParts = {
+            "Head", 
+            "HumanoidRootPart", -- Thân
+            "LeftHand", 
+            "RightHand", 
+            "LeftFoot", 
+            "RightFoot", 
+            "LeftLowerArm", 
+            "RightLowerArm", 
+            "LeftLowerLeg", 
+            "RightLowerLeg"
+        }
+        for _, partName in ipairs(bodyParts) do
+            local part = player.Character:FindFirstChild(partName)
+            if part then
+                local partPosition = part.Position
+                rayDirection = (partPosition - rayOrigin).Unit * (partPosition - rayOrigin).Magnitude
+                raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+                if not raycastResult or not raycastResult.Instance then
+                    predictedPosition = partPosition
+                    print("[Debug] getPredictedPosition: Targeting exposed part", partName, "at", partPosition)
+                    break
+                end
+            end
+        end
+    end
+
+    print("[Debug] getPredictedPosition: Final Position =", predictedPosition, "WalkSpeed =", walkSpeed, "HeightOffset =", heightOffset)
     return predictedPosition
 end
 
@@ -5718,19 +5754,18 @@ local function updatePredictedCircle()
         return
     end
 
-    -- Tạo BillboardGui nếu chưa tồn tại
     if not predictedCircleGui then
         predictedCircleGui = Instance.new("BillboardGui")
         predictedCircleGui.Name = "PredictedCircle"
         predictedCircleGui.Parent = game.Workspace
         predictedCircleGui.AlwaysOnTop = true
-        predictedCircleGui.Size = UDim2.new(0, 15, 0, 15) -- Kích thước nhỏ hơn
+        predictedCircleGui.Size = UDim2.new(0, 15, 0, 15)
         predictedCircleGui.StudsOffset = Vector3.new(0, 0, 0)
 
         local circle = Instance.new("Frame")
         circle.Size = UDim2.new(1, 0, 1, 0)
         circle.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-        circle.BackgroundTransparency = 0.6 -- Tăng trong suốt
+        circle.BackgroundTransparency = 0.6
         circle.BorderSizePixel = 0
         local uicorner = Instance.new("UICorner")
         uicorner.CornerRadius = UDim.new(1, 0)
@@ -5747,7 +5782,6 @@ local function updatePredictedCircle()
         print("[Debug] updatePredictedCircle: Created new BillboardGui")
     end
 
-    -- Cập nhật vị trí vòng tròn
     predictedCircleGui.Adornee.Position = predictedPosition
     print("[Debug] updatePredictedCircle: Updated position to", predictedPosition)
 end
@@ -5917,11 +5951,9 @@ table.insert(module, {
                 return
             end
 
-            -- Cầm súng
             hum:EquipTool(gun)
             print("[Debug] Shoot Murderer: Gun equipped")
 
-            -- Lấy vị trí dự đoán và bắn
             local predictedPosition = getPredictedPosition(murderer, shootOffset)
             if predictedPosition == Vector3.new(0, 0, 0) then
                 fu.notification("Không thể dự đoán vị trí bắn.")
@@ -5939,7 +5971,6 @@ table.insert(module, {
             end)
             print("[Debug] Shoot Murderer: Shot fired, success =", success, "result =", result)
 
-            -- Bỏ súng ngay lập tức
             hum:UnequipTools()
             print("[Debug] Shoot Murderer: Gun unequipped")
             fu.notification("Đã bắn vào murderer và bỏ súng ngay lập tức.")
