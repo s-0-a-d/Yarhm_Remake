@@ -5945,19 +5945,20 @@ table.insert(module, {
                 return
             end
 
+            hum:EquipTool(gun)
+            print("[Debug] Shoot Murderer: Gun equipped")
+
             local murdererHRP = murderer.Character:FindFirstChild("HumanoidRootPart")
             if not murdererHRP then
                 fu.notification("Không tìm thấy HumanoidRootPart của murderer.")
+                hum:UnequipTools() -- Bỏ súng nếu không tìm thấy mục tiêu
                 return
             end
-
-            hum:EquipTool(gun)
-            print("[Debug] Shoot Murderer: Gun equipped")
 
             local predictedPosition = getPredictedPosition(murderer, shootOffset)
             if predictedPosition == Vector3.new(0, 0, 0) then
                 fu.notification("Không thể dự đoán vị trí bắn.")
-                hum:UnequipTools()
+                hum:UnequipTools() -- Bỏ súng nếu không dự đoán được vị trí
                 return
             end
 
@@ -5967,13 +5968,17 @@ table.insert(module, {
                 [3] = "AH2"
             }
             local success, result = pcall(function()
-                return localplayer.Character.Gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(unpack(args))
+                local result = localplayer.Character.Gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(unpack(args))
+                hum:UnequipTools() -- Bỏ súng ngay sau khi bắn
+                return result
             end)
             print("[Debug] Shoot Murderer: Shot fired, success =", success, "result =", result)
 
-            hum:UnequipTools()
-            print("[Debug] Shoot Murderer: Gun unequipped")
-            fu.notification("Đã bắn vào murderer và bỏ súng ngay lập tức.")
+            if success then
+                fu.notification("Đã bắn vào murderer và bỏ súng ngay lập tức.")
+            else
+                fu.notification("Lỗi khi bắn vào murderer.")
+            end
         end,
     }
 })
